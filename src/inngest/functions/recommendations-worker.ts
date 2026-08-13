@@ -119,12 +119,70 @@ export const recommendationsBuildWorker = inngest.createFunction(
         if (!seenPage || seenPage.length < 1000) break;
       }
 
+      // 5. Fetch accessible repos per user via installation_repositories.
+      //    First get installation IDs for each user from github_installation_users,
+      //    then fetch the repos those installations have access to.
+      const installIdsByUser = new Map<string, Set<number>>();
+      for (let from = 0; ; from += 1000) {
+        const { data: instPage } = await sb
+          .from('github_installation_users')
+          .select('user_id, installation_id')
+          .in('user_id', userIds)
+          .range(from, from + 999);
+
+        for (const row of instPage ?? []) {
+          if (!row.user_id || !row.installation_id) continue;
+          if (!installIdsByUser.has(row.user_id)) {
+            installIdsByUser.set(row.user_id, new Set());
+          }
+          installIdsByUser.get(row.user_id)!.add(row.installation_id);
+        }
+        if (!instPage || instPage.length < 1000) break;
+      }
+
+      const allInstallIds = [...new Set([...installIdsByUser.values()].flatMap((s) => [...s]))];
+      const reposByInstall = new Map<number, Set<string>>();
+      for (let from = 0; ; from += 1000) {
+        const { data: reposPage } = await sb
+          .from('installation_repositories')
+          .select('installation_id, repo_full_name')
+          .in('installation_id', allInstallIds)
+          .eq('managed', true)
+          .range(from, from + 999);
+
+        for (const row of reposPage ?? []) {
+          if (!row.repo_full_name) continue;
+          if (!reposByInstall.has(row.installation_id)) {
+            reposByInstall.set(row.installation_id, new Set());
+          }
+          reposByInstall.get(row.installation_id)!.add(row.repo_full_name);
+        }
+        if (!reposPage || reposPage.length < 1000) break;
+      }
+
+      const reposByUser = new Map<string, Set<string>>();
+      for (const [userId, installIds] of installIdsByUser) {
+        const userRepoSet = new Set<string>();
+        for (const instId of installIds) {
+          const repos = reposByInstall.get(instId);
+          if (repos) {
+            for (const repo of repos) userRepoSet.add(repo);
+          }
+        }
+        reposByUser.set(userId, userRepoSet);
+      }
+
       let totalInserted = 0;
       for (const u of userList) {
         const level = u.profiles?.level ?? 0;
         const userLang = u.profiles?.primary_language ?? null;
 
-        const candidates: ScoredIssue[] = rawPool.map((i) => ({
+        const userRepos = reposByUser.get(u.user_id);
+        const candidates: ScoredIssue[] = (
+          userRepos && userRepos.size > 0
+            ? rawPool.filter((i) => userRepos.has(i.repo_full_name))
+            : rawPool
+        ).map((i) => ({
           repoLanguage: i.repo_language,
           id: i.id,
           repoFullName: i.repo_full_name,

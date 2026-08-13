@@ -34,6 +34,8 @@ const mockIssuesLimit = vi.fn();
 const mockUsersNot = vi.fn();
 const mockSkipHistoryGte = vi.fn();
 const mockSeenIn = vi.fn();
+const mockInstallationUsersRange = vi.fn();
+const mockInstallationReposRange = vi.fn();
 const mockUpsert = vi.fn();
 
 let fromCallCount = 0;
@@ -97,7 +99,31 @@ vi.mock('@/lib/supabase/service', () => ({
         };
       }
 
-      // callIndex >= 4: .upsert(rows, opts)
+      if (callIndex === 4) {
+        // github_installation_users: .select().in().range()
+        return {
+          select: () => ({
+            in: () => ({
+              range: mockInstallationUsersRange,
+            }),
+          }),
+        };
+      }
+
+      if (callIndex === 5) {
+        // installation_repositories: .select().in().eq().range()
+        return {
+          select: () => ({
+            in: () => ({
+              eq: () => ({
+                range: mockInstallationReposRange,
+              }),
+            }),
+          }),
+        };
+      }
+
+      // callIndex >= 6: .upsert(rows, opts)
       return {
         upsert: mockUpsert,
       };
@@ -118,6 +144,8 @@ describe('recommendations-build-worker', () => {
     mockUsersNot.mockResolvedValue({ data: [] });
     mockSkipHistoryGte.mockResolvedValue({ data: [] });
     mockSeenIn.mockResolvedValue({ data: [] });
+    mockInstallationUsersRange.mockResolvedValue({ data: [] });
+    mockInstallationReposRange.mockResolvedValue({ data: [] });
     mockUpsert.mockResolvedValue({ error: null });
   });
 
