@@ -487,7 +487,8 @@ async function tryLinkByIssueRef(
     .from('recommendations')
     .select('id, issues!inner(repo_full_name, github_issue_number)')
     .eq('user_id', profile.id)
-    .in('status', ['open', 'claimed']);
+    .eq('status', 'claimed')
+    .is('linked_pr_url', null);
 
   for (const claim of claims ?? []) {
     // Supabase types the joined `issues` field as an array even for a
