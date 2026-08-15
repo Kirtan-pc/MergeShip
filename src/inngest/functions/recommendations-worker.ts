@@ -178,11 +178,11 @@ export const recommendationsBuildWorker = inngest.createFunction(
         const userLang = u.profiles?.primary_language ?? null;
 
         const userRepos = reposByUser.get(u.user_id);
-        const candidates: ScoredIssue[] = (
+        const accessiblePool =
           userRepos && userRepos.size > 0
             ? rawPool.filter((i) => userRepos.has(i.repo_full_name))
-            : rawPool
-        ).map((i) => ({
+            : [];
+        const candidates: ScoredIssue[] = accessiblePool.map((i) => ({
           repoLanguage: i.repo_language,
           id: i.id,
           repoFullName: i.repo_full_name,
